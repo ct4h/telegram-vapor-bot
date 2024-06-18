@@ -27,6 +27,7 @@ public final class TGLongPollingConnection: TGConnectionPrtcl {
     public var timeout: Int? = 10
     public var allowedUpdates: [TGUpdate.CodingKeys]?
     
+    private var currentTask: Task<(), any Error>?
     private var offsetUpdates: Int = 0
     private var newOffsetUpdates: Int { offsetUpdates + 1 }
     
@@ -46,13 +47,22 @@ public final class TGLongPollingConnection: TGConnectionPrtcl {
     @discardableResult
     public func start() async throws -> Bool {
         /// delete webhook because: You will not be able to receive updates using getUpdates for as long as an outgoing webhook is set up.
-        let deleteWebHookParams: TGDeleteWebhookParams = .init(dropPendingUpdates: false)
+        let deleteWebHookParams: TGDeleteWebhookParams = .init(dropPendingUpdates: true)
         try await bot.deleteWebhook(params: deleteWebHookParams)
-        Task.detached { [weak self] in
-            guard let self = self else { return }
-            while !Task.isCancelled {
-                try await Task.sleep(nanoseconds: 100)
-                try await self.getUpdates()
+        
+        currentTask = Task.detached { [weak self] in
+            guard let self = self, let task = self.currentTask else {
+                return
+            }
+            
+            while !task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 100)
+                    try await self.getUpdates()
+                } catch {
+                    try await self.start()
+                    task.cancel()
+                }
             }
         }
         
