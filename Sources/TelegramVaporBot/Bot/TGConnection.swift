@@ -20,6 +20,7 @@ public protocol TGConnectionPrtcl {
 
 
 public final class TGLongPollingConnection: TGConnectionPrtcl {
+    public typealias ErrorHandler = (Error) -> Void
     
     public let bot: TGBot
     public let dispatcher: TGDispatcherPrtcl
@@ -27,6 +28,7 @@ public final class TGLongPollingConnection: TGConnectionPrtcl {
     public var timeout: Int? = 10
     public var allowedUpdates: [TGUpdate.CodingKeys]?
     
+    private let errorHandler: ErrorHandler?
     private var currentTask: Task<(), any Error>?
     private var offsetUpdates: Int = 0
     private var newOffsetUpdates: Int { offsetUpdates + 1 }
@@ -35,13 +37,15 @@ public final class TGLongPollingConnection: TGConnectionPrtcl {
                 dispatcher: TGDispatcherPrtcl.Type = TGDefaultDispatcher.self,
                 limit: Int? = nil,
                 timeout: Int? = nil,
-                allowedUpdates: [TGUpdate.CodingKeys]? = nil
+                allowedUpdates: [TGUpdate.CodingKeys]? = nil,
+                errorHandler: ErrorHandler? = nil
     ) async throws {
         self.bot = bot
         self.dispatcher = try await dispatcher.init(bot: bot)
         self.limit = limit
         self.timeout = timeout ?? self.timeout
         self.allowedUpdates = allowedUpdates
+        self.errorHandler = errorHandler
     }
     
     @discardableResult
@@ -60,6 +64,8 @@ public final class TGLongPollingConnection: TGConnectionPrtcl {
                     try await Task.sleep(nanoseconds: 100)
                     try await self.getUpdates()
                 } catch {
+                    self.errorHandler?(error)
+                    
                     try await self.start()
                     task.cancel()
                 }
